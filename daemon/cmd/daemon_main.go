@@ -25,6 +25,7 @@ import (
 
 	"github.com/cilium/cilium/api/v1/server"
 	"github.com/cilium/cilium/api/v1/server/restapi"
+	"github.com/cilium/cilium/daemon/cmd/cni"
 	"github.com/cilium/cilium/pkg/auth"
 	"github.com/cilium/cilium/pkg/aws/eni"
 	bgpv1 "github.com/cilium/cilium/pkg/bgpv1/agent"
@@ -42,6 +43,7 @@ import (
 	datapathOption "github.com/cilium/cilium/pkg/datapath/option"
 	datapath "github.com/cilium/cilium/pkg/datapath/types"
 	"github.com/cilium/cilium/pkg/defaults"
+	"github.com/cilium/cilium/pkg/egressgateway"
 	"github.com/cilium/cilium/pkg/endpointmanager"
 	"github.com/cilium/cilium/pkg/envoy"
 	"github.com/cilium/cilium/pkg/flowdebug"
@@ -182,10 +184,6 @@ func initializeFlags() {
 
 	flags.String(option.CGroupRoot, "", "Path to Cgroup2 filesystem")
 	option.BindEnv(Vp, option.CGroupRoot)
-
-	flags.Bool(option.SockopsEnableName, defaults.SockopsEnable, "Enable sockops when kernel supported")
-	option.BindEnv(Vp, option.SockopsEnableName)
-	flags.MarkDeprecated(option.SockopsEnableName, "This option will be removed in v1.14")
 
 	flags.Int(option.ClusterIDName, 0, "Unique identifier of the cluster")
 	option.BindEnv(Vp, option.ClusterIDName)
@@ -359,10 +357,6 @@ func initializeFlags() {
 	flags.String(option.NodeEncryptionOptOutLabels, defaults.NodeEncryptionOptOutLabels, "Label selector for nodes which will opt-out of node-to-node encryption")
 	option.BindEnv(Vp, option.NodeEncryptionOptOutLabels)
 
-	flags.Bool(option.ForceLocalPolicyEvalAtSource, defaults.ForceLocalPolicyEvalAtSource, "Force policy evaluation of all local communication at the source endpoint")
-	option.BindEnv(Vp, option.ForceLocalPolicyEvalAtSource)
-	flags.MarkDeprecated(option.ForceLocalPolicyEvalAtSource, "This option will be removed in v1.14")
-
 	flags.Bool(option.HTTPNormalizePath, true, "Use Envoy HTTP path normalization options, which currently includes RFC 3986 path normalization, Envoy merge slashes option, and unescaping and redirecting for paths that contain escaped slashes. These are necessary to keep path based access control functional, and should not interfere with normal operation. Set this to false only with caution.")
 	option.BindEnv(Vp, option.HTTPNormalizePath)
 
@@ -420,9 +414,6 @@ func initializeFlags() {
 
 	flags.String(option.IPAM, ipamOption.IPAMClusterPool, "Backend to use for IPAM")
 	option.BindEnv(Vp, option.IPAM)
-
-	flags.String(option.CNIChainingMode, "", "Enable CNI chaining with the specified plugin")
-	option.BindEnv(Vp, option.CNIChainingMode)
 
 	flags.String(option.IPv4Range, AutoCIDR, "Per-node IPv4 endpoint prefix, e.g. 10.16.0.0/16")
 	option.BindEnv(Vp, option.IPv4Range)
@@ -567,7 +558,7 @@ func initializeFlags() {
 	flags.String(option.LoadBalancerAlg, option.NodePortAlgRandom, "BPF load balancing algorithm (\"random\", \"maglev\")")
 	option.BindEnv(Vp, option.LoadBalancerAlg)
 
-	flags.String(option.LoadBalancerDSRDispatch, option.DSRDispatchOption, "BPF load balancing DSR dispatch method (\"opt\", \"ipip\")")
+	flags.String(option.LoadBalancerDSRDispatch, option.DSRDispatchOption, "BPF load balancing DSR dispatch method (\"opt\", \"ipip\", \"geneve\")")
 	option.BindEnv(Vp, option.LoadBalancerDSRDispatch)
 
 	flags.String(option.LoadBalancerDSRL4Xlate, option.DSRL4XlateFrontend, "BPF load balancing DSR L4 DNAT method for IPIP (\"frontend\", \"backend\")")
@@ -664,9 +655,6 @@ func initializeFlags() {
 	flags.Bool(option.EnableIPv4EgressGateway, false, "Enable egress gateway for IPv4")
 	option.BindEnv(Vp, option.EnableIPv4EgressGateway)
 
-	flags.Bool(option.InstallEgressGatewayRoutes, false, "Install egress gateway IP rules and routes in order to properly steer egress gateway traffic to the correct ENI interface")
-	option.BindEnv(Vp, option.InstallEgressGatewayRoutes)
-
 	flags.Int(option.EgressGatewayPolicyMapEntriesName, egressmap.MaxPolicyEntries, "Maximum number of entries in egress gateway policy map")
 	option.BindEnv(Vp, option.EgressGatewayPolicyMapEntriesName)
 
@@ -723,9 +711,6 @@ func initializeFlags() {
 
 	flags.String(option.IPv4NodeAddr, "auto", "IPv4 address of node")
 	option.BindEnv(Vp, option.IPv4NodeAddr)
-
-	flags.String(option.ReadCNIConfiguration, "", fmt.Sprintf("CNI configuration file to use as a source for --%s. If not supplied, a suitable one will be generated.", option.WriteCNIConfigurationWhenReady))
-	option.BindEnv(Vp, option.ReadCNIConfiguration)
 
 	flags.Bool(option.Restore, true, "Restores state, if possible, from previous daemon")
 	option.BindEnv(Vp, option.Restore)
@@ -881,9 +866,6 @@ func initializeFlags() {
 
 	flags.Int(option.EndpointQueueSize, defaults.EndpointQueueSize, "Size of EventQueue per-endpoint")
 	option.BindEnv(Vp, option.EndpointQueueSize)
-
-	flags.String(option.WriteCNIConfigurationWhenReady, "", "Write the CNI configuration to the specified path when agent is ready")
-	option.BindEnv(Vp, option.WriteCNIConfigurationWhenReady)
 
 	flags.Duration(option.PolicyTriggerInterval, defaults.PolicyTriggerInterval, "Time between triggers of policy updates (regenerations for all endpoints)")
 	flags.MarkHidden(option.PolicyTriggerInterval)
@@ -1370,7 +1352,6 @@ func initEnv() {
 	}
 
 	initClockSourceOption()
-	initSockmapOption()
 
 	if option.Config.EnableSRv6 {
 		if !option.Config.EnableIPv6 {
@@ -1583,24 +1564,26 @@ var daemonCell = cell.Module(
 type daemonParams struct {
 	cell.In
 
-	Lifecycle         hive.Lifecycle
-	Clientset         k8sClient.Clientset
-	Datapath          datapath.Datapath
-	WGAgent           *wireguard.Agent `optional:"true"`
-	LocalNodeStore    node.LocalNodeStore
-	BGPController     *bgpv1.Controller
-	Shutdowner        hive.Shutdowner
-	SharedResources   k8s.SharedResources
-	CacheStatus       k8s.CacheStatus
-	NodeManager       nodeManager.NodeManager
-	EndpointManager   endpointmanager.EndpointManager
-	CertManager       certificatemanager.CertificateManager
-	SecretManager     certificatemanager.SecretManager
-	AuthManager       auth.Manager
-	IdentityAllocator CachingIdentityAllocator
-	Policy            *policy.Repository
-	PolicyUpdater     *policy.Updater
-	IPCache           *ipcache.IPCache
+	Lifecycle            hive.Lifecycle
+	Clientset            k8sClient.Clientset
+	Datapath             datapath.Datapath
+	WGAgent              *wireguard.Agent `optional:"true"`
+	LocalNodeStore       node.LocalNodeStore
+	BGPController        *bgpv1.Controller
+	Shutdowner           hive.Shutdowner
+	SharedResources      k8s.SharedResources
+	CacheStatus          k8s.CacheStatus
+	NodeManager          nodeManager.NodeManager
+	EndpointManager      endpointmanager.EndpointManager
+	CertManager          certificatemanager.CertificateManager
+	SecretManager        certificatemanager.SecretManager
+	AuthManager          auth.Manager
+	IdentityAllocator    CachingIdentityAllocator
+	Policy               *policy.Repository
+	PolicyUpdater        *policy.Updater
+	IPCache              *ipcache.IPCache
+	EgressGatewayManager *egressgateway.Manager
+	CNIConfigManager     cni.CNIConfigManager
 }
 
 func newDaemonPromise(params daemonParams) promise.Promise[*Daemon] {
@@ -1639,6 +1622,8 @@ func newDaemonPromise(params daemonParams) promise.Promise[*Daemon] {
 				params.IdentityAllocator,
 				params.Policy,
 				params.PolicyUpdater,
+				params.EgressGatewayManager,
+				params.CNIConfigManager,
 			)
 			if err != nil {
 				return fmt.Errorf("daemon creation failed: %w", err)
@@ -1825,6 +1810,10 @@ func runDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *daem
 	unlockDeleteDir := d.processQueuedDeletes()
 	bootstrapStats.deleteQueue.End(true)
 
+	// Assign the BGP Control to the struct field so non-modularized components can interact with the BGP Controller
+	// like they are used to.
+	d.bgpControlPlaneController = params.BGPController
+
 	// Start up the local api socket
 	bootstrapStats.initAPI.Start()
 	srv := server.NewServer(d.instantiateAPI())
@@ -1858,14 +1847,8 @@ func runDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *daem
 		}
 	}
 
-	// Assign the BGP Control to the struct field so non-modularized components can interact with the BGP Controller
-	// like they are used to.
-	d.bgpControlPlaneController = params.BGPController
-
 	log.WithField("bootstrapTime", time.Since(bootstrapTimestamp)).
 		Info("Daemon initialization completed")
-
-	d.startCNIConfWriter(option.Config, cleaner)
 
 	bootstrapStats.overall.End(true)
 	bootstrapStats.updateMetrics()
@@ -2009,20 +1992,10 @@ func (d *Daemon) instantiateAPI() *restapi.CiliumAPIAPI {
 	// /node/ids
 	restAPI.DaemonGetNodeIdsHandler = NewGetNodeIDsHandler(d.datapath.Node())
 
-	return restAPI
-}
+	// /bgp/peers
+	restAPI.BgpGetBgpPeersHandler = NewGetBGPHandler(d.bgpControlPlaneController)
 
-func initSockmapOption() {
-	if !option.Config.SockopsEnable {
-		return
-	}
-	if probes.HaveMapType(ebpf.SockHash) == nil &&
-		probes.HaveProgramType(ebpf.SockOps) == nil &&
-		probes.HaveProgramType(ebpf.SkMsg) == nil {
-		return
-	}
-	log.Warn("BPF Sock ops not supported by kernel. Disabling '--sockops-enable' feature.")
-	option.Config.SockopsEnable = false
+	return restAPI
 }
 
 func initClockSourceOption() {

@@ -744,7 +744,7 @@ func getListenerFilter(isIngress bool, mayUseOriginalSourceAddr bool, l7lb bool)
 	conf := &cilium.BpfMetadata{
 		IsIngress:                   isIngress,
 		MayUseOriginalSourceAddress: mayUseOriginalSourceAddr,
-		BpfRoot:                     bpf.GetMapRoot(),
+		BpfRoot:                     bpf.BPFFSRoot(),
 		EgressMarkSourceEndpointId:  l7lb,
 	}
 	// Set Ingress source addresses if configuring for L7 LB
@@ -1146,7 +1146,7 @@ func getHTTPRule(secretManager certificatemanager.SecretManager, h *api.PortRule
 						HeaderMatchSpecifier: &envoy_config_route.HeaderMatcher_PresentMatch{PresentMatch: true}})
 				}
 			} else {
-				log.Debugf("HeaderMatches: Adding %s: %s", hdr.Name, value)
+				log.Debugf("HeaderMatches: Adding %s", hdr.Name)
 				headerMatches = append(headerMatches, &cilium.HeaderMatch{
 					MismatchAction: mismatch_action,
 					Name:           hdr.Name,

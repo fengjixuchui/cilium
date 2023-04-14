@@ -160,9 +160,7 @@ brought up by vagrant:
 * ``NETNEXT=1``: Run with net-next kernel.
 * ``SERVER_BOX`` and ``SERVER_VERSION``: Run with a specified vagrant
   box. See: ``vagrant_box_defaults.rb`` for the supported
-  versions. This may be useful for BPF developers that want to test
-  their changes with ``make -C bpf && sudo
-  test/bpf/verifier-test.sh``.
+  versions.
 * ``IPV4=1``: Run Cilium with IPv4 enabled.
 * ``RUNTIME=x``: Sets up the container runtime to be used inside a kubernetes
   cluster. Valid options are: ``containerd`` and ``crio``. If not
@@ -298,6 +296,12 @@ with NFS. Note that your host firewall must have a variety of ports open. The
 Vagrantfile will inform you of the configuration of these addresses and ports
 to enable NFS.
 
+.. note::
+
+   Although providing a Developer preview for macOS/arm64 (M1/M2) hosts, 
+   Oracle is not going to offer official support for ARM64 on Mac. As of VirtualBox 7.0.6
+   the developer preview is *not* working with the Cilium Vagrant Setup.
+   
 .. note::
 
    OSX file system is by default case insensitive, which can confuse

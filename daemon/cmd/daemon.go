@@ -22,6 +22,7 @@ import (
 
 	"github.com/cilium/cilium/api/v1/models"
 	health "github.com/cilium/cilium/cilium-health/launch"
+	"github.com/cilium/cilium/daemon/cmd/cni"
 	"github.com/cilium/cilium/pkg/auth"
 	"github.com/cilium/cilium/pkg/bandwidth"
 	"github.com/cilium/cilium/pkg/bgp/speaker"
@@ -65,11 +66,9 @@ import (
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/maps/ctmap"
-	"github.com/cilium/cilium/pkg/maps/eppolicymap"
 	ipcachemap "github.com/cilium/cilium/pkg/maps/ipcache"
 	"github.com/cilium/cilium/pkg/maps/lbmap"
 	"github.com/cilium/cilium/pkg/maps/policymap"
-	"github.com/cilium/cilium/pkg/maps/sockmap"
 	"github.com/cilium/cilium/pkg/metrics"
 	monitoragent "github.com/cilium/cilium/pkg/monitor/agent"
 	monitorAPI "github.com/cilium/cilium/pkg/monitor/api"
@@ -90,7 +89,6 @@ import (
 	"github.com/cilium/cilium/pkg/redirectpolicy"
 	"github.com/cilium/cilium/pkg/service"
 	serviceStore "github.com/cilium/cilium/pkg/service/store"
-	"github.com/cilium/cilium/pkg/sockops"
 	"github.com/cilium/cilium/pkg/source"
 	"github.com/cilium/cilium/pkg/status"
 	"github.com/cilium/cilium/pkg/trigger"
@@ -209,6 +207,9 @@ type Daemon struct {
 
 	// BIG-TCP config values
 	bigTCPConfig bigtcp.Configuration
+
+	// just used to tie together some status reporting
+	cniConfigManager cni.CNIConfigManager
 }
 
 func (d *Daemon) initDNSProxyContext(size int) {
@@ -270,10 +271,6 @@ func (d *Daemon) init() error {
 		log.WithError(err).WithField(logfields.Path, option.Config.StateDir).Fatal("Could not change to runtime directory")
 	}
 
-	// Remove any old sockops and re-enable with _new_ programs if flag is set
-	sockops.SockmapDisable()
-	sockops.SkmsgDisable()
-
 	if !option.Config.DryMode {
 		bandwidth.InitBandwidthManager()
 
@@ -285,20 +282,6 @@ func (d *Daemon) init() error {
 			return fmt.Errorf("failed while reinitializing datapath: %w", err)
 		}
 
-		if err := linuxdatapath.NodeEnsureLocalIPRule(); err != nil {
-			return fmt.Errorf("failed to ensure local IP rules: %w", err)
-		}
-
-		if option.Config.SockopsEnable {
-			eppolicymap.CreateEPPolicyMap()
-			if err := sockops.SockmapEnable(); err != nil {
-				return fmt.Errorf("failed to enable Sockmap: %w", err)
-			} else if err := sockops.SkmsgEnable(); err != nil {
-				return fmt.Errorf("failed to enable Sockmsg: %w", err)
-			} else {
-				sockmap.SockmapCreate()
-			}
-		}
 	}
 
 	return nil
@@ -419,6 +402,8 @@ func newDaemon(ctx context.Context, cleaner *daemonCleanup,
 	identityAllocator CachingIdentityAllocator,
 	pr *policy.Repository,
 	policyUpdater *policy.Updater,
+	egressGatewayManager *egressgateway.Manager,
+	cniConfigManager cni.CNIConfigManager,
 ) (*Daemon, *endpointRestoreState, error) {
 
 	var (
@@ -440,17 +425,9 @@ func newDaemon(ctx context.Context, cleaner *daemonCleanup,
 		return nil, nil, fmt.Errorf("CRD Identity allocation mode requires k8s to be configured")
 	}
 
-	if option.Config.ReadCNIConfiguration != "" {
-		netConf, err = cnitypes.ReadNetConf(option.Config.ReadCNIConfiguration)
-		if err != nil {
-			log.WithError(err).Error("Unable to read CNI configuration")
-			return nil, nil, fmt.Errorf("unable to read CNI configuration: %w", err)
-		}
-
-		if netConf.MTU != 0 {
-			configuredMTU = netConf.MTU
-			log.WithField("mtu", configuredMTU).Info("Overwriting MTU based on CNI configuration")
-		}
+	if mtu := cniConfigManager.GetMTU(); mtu > 0 {
+		configuredMTU = mtu
+		log.WithField("mtu", configuredMTU).Info("Overwriting MTU based on CNI configuration")
 	}
 
 	apiLimiterSet, err := rate.NewAPILimiterSet(option.Config.APIRateLimit, apiRateLimitDefaults, &apiRateLimitingMetrics{})
@@ -566,10 +543,12 @@ func newDaemon(ctx context.Context, cleaner *daemonCleanup,
 		// **NOTE** The global identity allocator is not yet initialized here; that
 		// happens below via InitIdentityAllocator(). Only the local identity
 		// allocator is initialized here.
-		identityAllocator: identityAllocator,
-		ipcache:           ipc,
-		policy:            pr,
-		policyUpdater:     policyUpdater,
+		identityAllocator:    identityAllocator,
+		ipcache:              ipc,
+		policy:               pr,
+		policyUpdater:        policyUpdater,
+		egressGatewayManager: egressGatewayManager,
+		cniConfigManager:     cniConfigManager,
 	}
 
 	if option.Config.RunMonitorAgent {
@@ -687,8 +666,9 @@ func newDaemon(ctx context.Context, cleaner *daemonCleanup,
 
 	d.cgroupManager = manager.NewCgroupManager()
 
-	if option.Config.EnableIPv4EgressGateway {
-		d.egressGatewayManager = egressgateway.NewEgressGatewayManager(cacheStatus, d.identityAllocator, option.Config.InstallEgressGatewayRoutes)
+	var egressGatewayWatcher watchers.EgressGatewayManager
+	if d.egressGatewayManager != nil {
+		egressGatewayWatcher = d.egressGatewayManager
 	}
 
 	d.k8sWatcher = watchers.NewK8sWatcher(
@@ -701,7 +681,7 @@ func newDaemon(ctx context.Context, cleaner *daemonCleanup,
 		d.datapath,
 		d.redirectPolicyManager,
 		d.bgpSpeaker,
-		d.egressGatewayManager,
+		egressGatewayWatcher,
 		d.l7Proxy,
 		option.Config,
 		d.ipcache,
@@ -1007,11 +987,6 @@ func newDaemon(ctx context.Context, cleaner *daemonCleanup,
 		}
 	}
 	if option.Config.EnableIPv4EgressGateway {
-		if probes.HaveLargeInstructionLimit() != nil {
-			log.WithError(err).Error("egress gateway needs kernel 5.2 or newer")
-			return nil, nil, fmt.Errorf("egress gateway needs kernel 5.2 or newer")
-		}
-
 		// datapath code depends on remote node identities to distinguish between cluser-local and
 		// cluster-egress traffic
 		if !option.Config.EnableRemoteNodeIdentity {

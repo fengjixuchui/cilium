@@ -103,21 +103,18 @@ const (
 	// from previous state automatically
 	EnableHostIPRestore = true
 
-	// DefaultMapRoot is the default path where BPFFS should be mounted
-	DefaultMapRoot = "/sys/fs/bpf"
+	// BPFFSRoot is the default path where BPFFS should be mounted
+	BPFFSRoot = "/sys/fs/bpf"
+
+	// BPFFSRootFallback is the path which is used when /sys/fs/bpf has
+	// a mount, but with the other filesystem than BPFFS.
+	BPFFSRootFallback = "/run/cilium/bpffs"
+
+	// TCGlobalsPath is the default prefix for all BPF maps.
+	TCGlobalsPath = "tc/globals"
 
 	// DefaultCgroupRoot is the default path where cilium cgroup2 should be mounted
 	DefaultCgroupRoot = "/run/cilium/cgroupv2"
-
-	// SockopsEnable controsl whether sockmap should be used
-	SockopsEnable = false
-
-	// DefaultMapRootFallback is the path which is used when /sys/fs/bpf has
-	// a mount, but with the other filesystem than BPFFS.
-	DefaultMapRootFallback = "/run/cilium/bpffs"
-
-	// DefaultMapPrefix is the default prefix for all BPF maps.
-	DefaultMapPrefix = "tc/globals"
 
 	// DNSMaxIPsPerRestoredRule defines the maximum number of IPs to maintain
 	// for each FQDN selector in endpoint's restored DNS rules.
@@ -324,11 +321,6 @@ const (
 
 	// LoopbackIPv4 is the default address for service loopback
 	LoopbackIPv4 = "169.254.42.1"
-
-	// ForceLocalPolicyEvalAtSource is the default value for
-	// option.ForceLocalPolicyEvalAtSource. It can be enabled to provide
-	// backwards compatibility.
-	ForceLocalPolicyEvalAtSource = false
 
 	// EnableEndpointRoutes is the value for option.EnableEndpointRoutes.
 	// It is disabled by default for backwards compatibility.

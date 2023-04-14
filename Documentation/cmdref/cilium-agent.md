@@ -39,7 +39,7 @@ cilium-agent [flags]
       --bpf-lb-acceleration string                              BPF load balancing acceleration via XDP ("native", "disabled") (default "disabled")
       --bpf-lb-algorithm string                                 BPF load balancing algorithm ("random", "maglev") (default "random")
       --bpf-lb-dev-ip-addr-inherit string                       Device name which IP addr is inherited by devices running LB BPF program (--devices)
-      --bpf-lb-dsr-dispatch string                              BPF load balancing DSR dispatch method ("opt", "ipip") (default "opt")
+      --bpf-lb-dsr-dispatch string                              BPF load balancing DSR dispatch method ("opt", "ipip", "geneve") (default "opt")
       --bpf-lb-dsr-l4-xlate string                              BPF load balancing DSR L4 DNAT method for IPIP ("frontend", "backend") (default "frontend")
       --bpf-lb-external-clusterip                               Enable external access to ClusterIP services (default false)
       --bpf-lb-maglev-hash-seed string                          Maglev cluster-wide hash seed (base64 encoded) (default "JLfvgnHc2kaSUFaI")
@@ -62,7 +62,9 @@ cilium-agent [flags]
       --cluster-id int                                          Unique identifier of the cluster
       --cluster-name string                                     Name of the cluster (default "default")
       --clustermesh-config string                               Path to the ClusterMesh configuration directory
-      --cni-chaining-mode string                                Enable CNI chaining with the specified plugin
+      --cni-chaining-mode string                                Enable CNI chaining with the specified plugin (default "none")
+      --cni-exclusive                                           Whether to remove other CNI configurations
+      --cni-log-file string                                     Path where the CNI plugin should write logs (default "/var/run/cilium/cilium-cni.log")
       --config string                                           Configuration file (default "$HOME/ciliumd.yaml")
       --config-dir string                                       Configuration directory that contains a file for each option
       --conntrack-gc-interval duration                          Overwrite the connection-tracking garbage collection interval
@@ -113,6 +115,7 @@ cilium-agent [flags]
       --enable-ipv6-big-tcp                                     Enable IPv6 BIG TCP option which increases device's maximum GRO/GSO limits
       --enable-ipv6-masquerade                                  Masquerade IPv6 traffic from endpoints leaving the host (default true)
       --enable-ipv6-ndp                                         Enable IPv6 NDP support
+      --enable-k8s                                              Enable the k8s clientset (default true)
       --enable-k8s-api-discovery                                Enable discovery of Kubernetes API groups and resources with the discovery API
       --enable-k8s-endpoint-slice                               Enables k8s EndpointSlice feature in Cilium if the k8s cluster supports it (default true)
       --enable-k8s-event-handover                               Enable k8s event handover to kvstore for improved scalability

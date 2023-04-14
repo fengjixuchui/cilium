@@ -163,12 +163,7 @@ file.
 
 To minimize datapath disruption during the upgrade, the
 ``upgradeCompatibility`` option should be set to the initial Cilium
-version which was installed in this cluster. Valid options are:
-
-* ``1.7`` if the initial install was Cilium 1.7.x or earlier.
-* ``1.8`` if the initial install was Cilium 1.8.x.
-* ``1.9`` if the initial install was Cilium 1.9.x.
-* ``1.10`` if the initial install was Cilium 1.10.x.
+version which was installed in this cluster.
 
 .. tabs::
   .. group-tab:: kubectl
@@ -317,12 +312,31 @@ Annotations:
   if you need to preserve the previous DNS network policy behavior that lets
   applications create new connections after the TTL specified by the upstream
   DNS server is expired.
+* Cilium now writes its CNI configuration file to ``05-cilium.conflist`` in
+  all cases, rather than the previous default of ``05-cilium.conf``.
+* The default value of ``--update-ec2-adapter-limit-via-api`` has changed from
+  ``false`` to ``true``. This means that the Cilium Operator will fetch the
+  most up-to-date EC2 adapter limits from the AWS API. This now requires
+  updated IAM permissions for Cilium to have ``ec2:DescribeInstances``. In EKS,
+  nodes usually have ``AmazonEKSWorkerNodePolicy`` which includes this
+  permission, so it should work in most cases. If your nodes don't have this
+  policy, then consider adding it to your IAM permissions. Explicitly configure
+  ``--update-ec2-adapter-limit-via-api`` to ``false`` if you want to avoid this
+  additional IAM permission. Beware that if your EC2 instance type that Cilium
+  is running on is not known to Cilium, it may cause a crash.
+
+Removed Options
+~~~~~~~~~~~~~~~
+
+* The ``sockops-enable`` and ``force-local-policy-eval-at-source`` options deprecated in version
+  1.13 are removed.
 
 Added Metrics
 ~~~~~~~~~~~~~
 
 * ``cilium_operator_ces_sync_total``
 * ``cilium_policy_change_total``
+* ``go_sched_latencies_seconds``
 
 Deprecated Metrics
 ~~~~~~~~~~~~~~~~~~
@@ -331,6 +345,11 @@ Deprecated Metrics
 * ``cilium_policy_import_errors_total`` is deprecated. Please use
   ``cilium_policy_change_total``, which counts all policy changes (Add, Update, Delete)
   based on outcome ("success" or "failure").
+
+Changed Metrics
+~~~~~~~~~~~~~~~
+
+* ``cilium_bpf_map_pressure`` is now enabled by default.
 
 Helm Options
 ~~~~~~~~~~~~

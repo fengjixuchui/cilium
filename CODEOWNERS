@@ -65,6 +65,9 @@
 #   Provide recommendations about the types, names and labels for metrics to
 #   follow best practices. This includes considering the cardinality impact of
 #   metrics being added or extended.
+# - @cilium/security:
+#   Provide feedback on changes that could have security implications for Cilium,
+#   and maintain security-related documentation.
 # - @cilium/tophat:
 #   Top Hat duties rotate between the committer group from week to week, and
 #   they may assist in maintenance, triage and backporting duties across
@@ -242,7 +245,6 @@ Makefile* @cilium/build
 /bpf/init.sh @cilium/loader
 /bpf/custom/Makefile* @cilium/build @cilium/loader
 /bpf/lib/encrypt.h @cilium/ipsec
-/bpf/sockops/Makefile* @cilium/build @cilium/loader
 /bugtool/ @cilium/tophat
 /bugtool/cmd/ @cilium/cli
 /cilium/ @cilium/cli
@@ -325,10 +327,12 @@ Makefile* @cilium/build
 /Documentation/overview/intro.rst @cilium/docs-structure
 /Documentation/requirements.txt @cilium/docs-structure
 /Documentation/security/http.rst @cilium/sig-policy @cilium/docs-structure
+/Documentation/security/images/cilium_threat_model* @cilium/security @cilium/docs-structure
 /Documentation/security/network/encryption-ipsec.rst @cilium/ipsec @cilium/docs-structure
 /Documentation/security/network/proxy/ @cilium/proxy @cilium/docs-structure
 /Documentation/security/policy-creation.rst @cilium/sig-policy @cilium/docs-structure
 /Documentation/security/policy/ @cilium/sig-policy @cilium/docs-structure
+/Documentation/security/threat-model.rst @cilium/security @cilium/docs-structure
 /Documentation/spelling_wordlist.txt @cilium/docs-structure
 /Documentation/update-cmdref.sh @cilium/docs-structure
 /Documentation/update-spelling_wordlist.sh @cilium/docs-structure
@@ -460,7 +464,6 @@ jenkinsfiles @cilium/ci-structure
 /pkg/safeio @cilium/sig-agent
 /pkg/serializer @cilium/sig-agent
 /pkg/service @cilium/sig-lb
-/pkg/sockops/ @cilium/sig-datapath @cilium/loader
 /pkg/status/ @cilium/sig-agent
 /pkg/sysctl @cilium/sig-datapath
 /pkg/testutils/ @cilium/ci-structure
@@ -481,13 +484,10 @@ jenkinsfiles @cilium/ci-structure
 /test/k8s/services.go @cilium/sig-lb @cilium/ci-structure
 # Datapath tests
 /test/bpf/ @cilium/sig-datapath
-/test/bpf/check-complexity.sh @cilium/loader
-/test/bpf/verifier-test.sh @cilium/loader
 /test/bpf_tests/ @cilium/sig-datapath
 /test/k8s/bandwidth.go @cilium/sig-datapath @cilium/ci-structure
 /test/k8s/chaos.go @cilium/sig-datapath @cilium/ci-structure
 /test/k8s/datapath_configuration.go @cilium/sig-datapath @cilium/ci-structure
-/test/k8s/verifier.go @cilium/loader @cilium/ci-structure
 /test/runtime/connectivity.go @cilium/sig-datapath @cilium/ci-structure
 /test/verifier @cilium/loader @cilium/ci-structure
 # Policy tests

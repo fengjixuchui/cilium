@@ -17,7 +17,6 @@ import (
 	"github.com/vishvananda/netlink"
 
 	"github.com/cilium/cilium/pkg/bpf"
-	"github.com/cilium/cilium/pkg/cgroups"
 	"github.com/cilium/cilium/pkg/command/exec"
 	"github.com/cilium/cilium/pkg/common"
 	"github.com/cilium/cilium/pkg/datapath/alignchecker"
@@ -33,6 +32,7 @@ import (
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/node"
 	"github.com/cilium/cilium/pkg/option"
+	"github.com/cilium/cilium/pkg/socketlb"
 	"github.com/cilium/cilium/pkg/sysctl"
 )
 
@@ -61,8 +61,6 @@ const (
 	initArgEndpointRoutes
 	initArgProxyRule
 	initTCFilterPriority
-	initDefaultRTProto
-	initLocalRulePriority
 	initArgMax
 )
 
@@ -151,7 +149,6 @@ func addENIRules(sysSettings []sysctl.Setting, nodeAddressing datapath.NodeAddre
 		Mark:     linux_defaults.MarkMultinodeNodeport,
 		Mask:     linux_defaults.MaskMultinodeNodeport,
 		Table:    route.MainTable,
-		Protocol: linux_defaults.RTProto,
 	}); err != nil {
 		return nil, fmt.Errorf("unable to install ip rule for ENI multi-node NodePort: %w", err)
 	}
@@ -287,8 +284,6 @@ func (l *Loader) Reinitialize(ctx context.Context, o datapath.BaseProgramOwner, 
 
 	args[initArgLib] = option.Config.BpfDir
 	args[initArgRundir] = option.Config.StateDir
-	args[initArgCgroupRoot] = cgroups.GetCgroupRoot()
-	args[initArgBpffsRoot] = bpf.GetMapRoot()
 
 	if option.Config.EnableIPv4 {
 		args[initArgIPv4NodeIP] = node.GetInternalIPv4Router().String()
@@ -297,7 +292,7 @@ func (l *Loader) Reinitialize(ctx context.Context, o datapath.BaseProgramOwner, 
 	}
 
 	if option.Config.EnableIPv6 {
-		args[initArgIPv6NodeIP] = node.GetIPv6().String()
+		args[initArgIPv6NodeIP] = node.GetIPv6Router().String()
 		// Docker <17.05 has an issue which causes IPv6 to be disabled in the initns for all
 		// interface (https://github.com/docker/libnetwork/issues/1720)
 		// Enable IPv6 for now
@@ -309,17 +304,10 @@ func (l *Loader) Reinitialize(ctx context.Context, o datapath.BaseProgramOwner, 
 
 	args[initArgMTU] = fmt.Sprintf("%d", deviceMTU)
 
-	if option.Config.EnableSocketLB {
-		args[initArgSocketLB] = "true"
-		if option.Config.EnableSocketLBPeer {
-			args[initArgSocketLBPeer] = "true"
-		} else {
-			args[initArgSocketLBPeer] = "false"
-		}
-	} else {
-		args[initArgSocketLB] = "false"
-		args[initArgSocketLBPeer] = "false"
-	}
+	args[initArgSocketLB] = "<nil>"
+	args[initArgSocketLBPeer] = "<nil>"
+	args[initArgCgroupRoot] = "<nil>"
+	args[initArgBpffsRoot] = "<nil>"
 
 	if len(option.Config.GetDevices()) != 0 {
 		args[initArgDevices] = strings.Join(option.Config.GetDevices(), ";")
@@ -349,6 +337,13 @@ func (l *Loader) Reinitialize(ctx context.Context, o datapath.BaseProgramOwner, 
 		args[initArgTunnelMode] = option.TunnelVXLAN
 	}
 
+	if option.Config.Tunnel == option.TunnelDisabled &&
+		option.Config.EnableNodePort &&
+		option.Config.NodePortMode == option.NodePortModeDSR &&
+		option.Config.LoadBalancerDSRDispatch == option.DSRDispatchGeneve {
+		args[initArgTunnelMode] = option.TunnelGeneve
+	}
+
 	args[initArgTunnelPort] = "<nil>"
 	switch args[initArgTunnelMode] {
 	case option.TunnelVXLAN, option.TunnelGeneve:
@@ -361,11 +356,7 @@ func (l *Loader) Reinitialize(ctx context.Context, o datapath.BaseProgramOwner, 
 		args[initArgNodePort] = "false"
 	}
 
-	if option.Config.NodePortBindProtection {
-		args[initArgNodePortBind] = "true"
-	} else {
-		args[initArgNodePortBind] = "false"
-	}
+	args[initArgNodePortBind] = "<nil>"
 
 	args[initBPFCPU] = GetBPFCPU()
 	args[initArgNrCPUs] = fmt.Sprintf("%d", common.GetNumPossibleCPUs(log))
@@ -406,8 +397,6 @@ func (l *Loader) Reinitialize(ctx context.Context, o datapath.BaseProgramOwner, 
 	}
 
 	args[initTCFilterPriority] = strconv.Itoa(int(option.Config.TCFilterPriority))
-	args[initDefaultRTProto] = strconv.Itoa(linux_defaults.RTProto)
-	args[initLocalRulePriority] = strconv.Itoa(linux_defaults.RulePriorityLocalLookup)
 
 	// "Legacy" datapath inizialization with the init.sh script
 	// TODO(mrostecki): Rewrite the whole init.sh in Go, step by step.
@@ -425,6 +414,20 @@ func (l *Loader) Reinitialize(ctx context.Context, o datapath.BaseProgramOwner, 
 	cmd.Env = bpf.Environment()
 	if _, err := cmd.CombinedOutput(log, true); err != nil {
 		return err
+	}
+
+	if option.Config.EnableSocketLB {
+		// compile bpf_sock.c and attach/detach progs for socketLB
+		if err := CompileWithOptions(ctx, "bpf_sock.c", "bpf_sock.o", []string{"-DCALLS_MAP=cilium_calls_lb"}); err != nil {
+			log.WithError(err).Fatal("failed to compile bpf_sock.c")
+		}
+		if err := socketlb.Enable(); err != nil {
+			return err
+		}
+	} else {
+		if err := socketlb.Disable(); err != nil {
+			return err
+		}
 	}
 
 	extraArgs := []string{"-Dcapture_enabled=0"}

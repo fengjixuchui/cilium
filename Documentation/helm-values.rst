@@ -56,6 +56,18 @@
      - SPIRE socket path where the SPIRE delegated api agent is listening
      - string
      - ``"/run/spire/sockets/admin.sock"``
+   * - auth.mTLS.spireAgentSocketPath
+     - SPIRE agent socket path where the SPIRE agent is listening
+     - string
+     - ``"/run/spire/sockets/agent/agent.sock"``
+   * - auth.mTLS.spireServerAddress
+     - SPIRE server endpoint This endpoint will be automatically injected later once embedded SPIRE installation is done.
+     - string
+     - ``"spire-server.spire.svc.cluster.local:8081"``
+   * - auth.mTLS.spireServerConnectionTimeout
+     - SPIRE server connection timeout
+     - string
+     - ``"10s"``
    * - autoDirectNodeRoutes
      - Enable installation of PodCIDR routes between worker nodes if worker nodes share a common L2 network segment.
      - bool
@@ -353,7 +365,7 @@
      - object
      - ``{"certManagerIssuerRef":{},"certValidityDuration":1095,"enabled":true,"method":"helm"}``
    * - clustermesh.apiserver.tls.auto.certManagerIssuerRef
-     - certmanager issuer used when clustermesh.apiserver.tls.auto.method=certmanager. If not specified, a CA issuer will be created.
+     - certmanager issuer used when clustermesh.apiserver.tls.auto.method=certmanager.
      - object
      - ``{}``
    * - clustermesh.apiserver.tls.auto.certValidityDuration
@@ -723,7 +735,7 @@
    * - eni.updateEC2AdapterLimitViaAPI
      - Update ENI Adapter limits from the EC2 API
      - bool
-     - ``false``
+     - ``true``
    * - etcd.clusterDomain
      - Cluster domain for cilium-etcd-operator.
      - string
@@ -1169,7 +1181,7 @@
      - object
      - ``{"certManagerIssuerRef":{},"certValidityDuration":1095,"enabled":true,"method":"helm","schedule":"0 0 1 */4 *"}``
    * - hubble.tls.auto.certManagerIssuerRef
-     - certmanager issuer used when hubble.tls.auto.method=certmanager. If not specified, a CA issuer will be created.
+     - certmanager issuer used when hubble.tls.auto.method=certmanager.
      - object
      - ``{}``
    * - hubble.tls.auto.certValidityDuration
@@ -2136,10 +2148,6 @@
      - Enable socket LB
      - bool
      - ``false``
-   * - sockops
-     - Configure BPF socket operations configuration
-     - object
-     - ``{"enabled":false}``
    * - startupProbe.failureThreshold
      - failure threshold of startup probe. 105 x 2s translates to the old behaviour of the readiness probe (120s delay + 30 x 3s)
      - int

@@ -17,21 +17,18 @@ NATIVE_DEVS=${10}
 HOST_DEV1=${11}
 HOST_DEV2=${12}
 MTU=${13}
-SOCKETLB=${14}
-SOCKETLB_PEER=${15}
-CGROUP_ROOT=${16}
-BPFFS_ROOT=${17}
+# SOCKETLB=${14}
+# SOCKETLB_PEER=${15}
+# CGROUP_ROOT=${16}
+# BPFFS_ROOT=${17}
 NODE_PORT=${18}
-NODE_PORT_BIND=${19}
+# NODE_PORT_BIND=${19}
 MCPU=${20}
 NR_CPUS=${21}
 ENDPOINT_ROUTES=${22}
 PROXY_RULE=${23}
 FILTER_PRIO=${24}
-DEFAULT_RTPROTO=${25}
-LOCAL_RULE_PRIO=${26}
 
-ID_HOST=1
 ID_WORLD=2
 
 # If the value below is changed, be sure to update bugtool/cmd/configuration.go
@@ -76,21 +73,21 @@ function move_local_rules_af()
 		return
 	fi
 
-	# move the local table lookup rule from pref 0 to pref LOCAL_RULE_PRIO so we
-	# can insert the cilium ip rules before the local table. It is strictly
+	# move the local table lookup rule from pref 0 to pref 100 so we can
+	# insert the cilium ip rules before the local table. It is strictly
 	# required to add the new local rule before deleting the old one as
 	# otherwise local addresses will not be reachable for a short period of
 	# time.
-	$IP rule list | grep "${LOCAL_RULE_PRIO}" | grep "lookup local" || {
-		$IP rule add from all lookup local pref ${LOCAL_RULE_PRIO} proto $DEFAULT_RTPROTO
+	$IP rule list | grep 100 | grep "lookup local" || {
+		$IP rule add from all lookup local pref 100
 	}
 	$IP rule del from all lookup local pref 0 2> /dev/null || true
 
 	# check if the move of the local table move was successful and restore
 	# it otherwise
 	if [ "$($IP rule list | grep "lookup local" | wc -l)" -eq "0" ]; then
-		$IP rule add from all lookup local pref 0 proto $DEFAULT_RTPROTO
-		$IP rule del from all lookup local pref ${LOCAL_RULE_PRIO}
+		$IP rule add from all lookup local pref 0
+		$IP rule del from all lookup local pref 100
 		echo "Error: The kernel does not support moving the local table routing rule"
 		echo "Local routing rules:"
 		$IP rule list lookup local
@@ -113,13 +110,13 @@ function setup_proxy_rules()
 {
 	# Any packet from an ingress proxy uses a separate routing table that routes
 	# the packet back to the cilium host device.
-	from_ingress_rulespec="fwmark 0xA00/0xF00 pref 10 lookup $PROXY_RT_TABLE proto $DEFAULT_RTPROTO"
+	from_ingress_rulespec="fwmark 0xA00/0xF00 pref 10 lookup $PROXY_RT_TABLE"
 
 	# Any packet to an ingress or egress proxy uses a separate routing table
 	# that routes the packet to the loopback device regardless of the destination
 	# address in the packet. For this to work the ctx must have a socket set
 	# (e.g., via TPROXY).
-	to_proxy_rulespec="fwmark 0x200/0xF00 pref 9 lookup $TO_PROXY_RT_TABLE proto $DEFAULT_RTPROTO"
+	to_proxy_rulespec="fwmark 0x200/0xF00 pref 9 lookup $TO_PROXY_RT_TABLE"
 
 	if [ "$IP4_HOST" != "<nil>" ]; then
 		if [ -n "$(ip -4 rule list)" ]; then
@@ -138,14 +135,14 @@ function setup_proxy_rules()
 		fi
 
 		# Traffic to the host proxy is local
-		ip route replace table $TO_PROXY_RT_TABLE local 0.0.0.0/0 dev lo proto $DEFAULT_RTPROTO
+		ip route replace table $TO_PROXY_RT_TABLE local 0.0.0.0/0 dev lo
 		# Traffic from ingress proxy goes to Cilium address space via the cilium host device
 		if [ "$ENDPOINT_ROUTES" = "true" ]; then
 			ip route delete table $PROXY_RT_TABLE $IP4_HOST/32 dev $HOST_DEV1 2>/dev/null || true
 			ip route delete table $PROXY_RT_TABLE default via $IP4_HOST 2>/dev/null || true
 		else
-			ip route replace table $PROXY_RT_TABLE $IP4_HOST/32 dev $HOST_DEV1 proto $DEFAULT_RTPROTO
-			ip route replace table $PROXY_RT_TABLE default via $IP4_HOST proto $DEFAULT_RTPROTO
+			ip route replace table $PROXY_RT_TABLE $IP4_HOST/32 dev $HOST_DEV1
+			ip route replace table $PROXY_RT_TABLE default via $IP4_HOST
 		fi
 	else
 		ip -4 rule del $to_proxy_rulespec 2> /dev/null || true
@@ -171,14 +168,14 @@ function setup_proxy_rules()
 		IP6_LLADDR=$(ip -6 addr show dev $HOST_DEV2 | grep inet6 | head -1 | awk '{print $2}' | awk -F'/' '{print $1}')
 		if [ -n "$IP6_LLADDR" ]; then
 			# Traffic to the host proxy is local
-			ip -6 route replace table $TO_PROXY_RT_TABLE local ::/0 dev lo proto $DEFAULT_RTPROTO
+			ip -6 route replace table $TO_PROXY_RT_TABLE local ::/0 dev lo
 			# Traffic from ingress proxy goes to Cilium address space via the cilium host device
 			if [ "$ENDPOINT_ROUTES" = "true" ]; then
 				ip -6 route delete table $PROXY_RT_TABLE ${IP6_LLADDR}/128 dev $HOST_DEV1 2>/dev/null || true
 				ip -6 route delete table $PROXY_RT_TABLE default via $IP6_LLADDR dev $HOST_DEV1 2>/dev/null || true
 			else
-				ip -6 route replace table $PROXY_RT_TABLE ${IP6_LLADDR}/128 dev $HOST_DEV1 proto $DEFAULT_RTPROTO
-				ip -6 route replace table $PROXY_RT_TABLE default via $IP6_LLADDR dev $HOST_DEV1 proto $DEFAULT_RTPROTO
+				ip -6 route replace table $PROXY_RT_TABLE ${IP6_LLADDR}/128 dev $HOST_DEV1
+				ip -6 route replace table $PROXY_RT_TABLE default via $IP6_LLADDR dev $HOST_DEV1
 			fi
 		fi
 	else
@@ -253,103 +250,6 @@ function bpf_load()
 		cilium bpf migrate-maps -e "$OUT" -r 1
 		return 1
 	fi
-}
-
-function bpf_load_cgroups()
-{
-	OPTS=$1
-	IN=$2
-	OUT=$3
-	PROG_TYPE=$4
-	WHERE=$5
-	CALLS_MAP=$6
-	CGRP=$7
-	BPFMNT=$8
-	NAME=$9
-
-	OPTS="${OPTS} -DCALLS_MAP=${CALLS_MAP}"
-	bpf_compile "$IN" "$OUT" obj "$OPTS"
-
-	TMP_FILE="$BPFMNT/tc/globals/cilium_cgroups_$WHERE"
-	rm -f "$TMP_FILE"
-
-	cilium bpf migrate-maps -s "$OUT"
-
-	if ! tc exec bpf pin "$TMP_FILE" obj "$OUT" type "$PROG_TYPE" attach_type "$WHERE" sec "cgroup/$WHERE"; then
-		cilium bpf migrate-maps -e "$OUT" -r 1
-		return 1
-	fi
-
-	set +e
-	bpftool link detach pinned "$BPFFS_ROOT/cilium/socketlb/links/cgroup/$NAME" || true
-	rm -f "$BPFFS_ROOT/cilium/socketlb/links/cgroup/$NAME"
-	set -e
-
-	if bpftool cgroup attach "$CGRP" "$WHERE" pinned "$TMP_FILE"; then
-		rm -f "$TMP_FILE"
-		return 0
-	fi
-
-	# Program might've been attached in multi-mode by a newer version of Cilium or
-	# by another tool. This means 'bpftool cgroup attach' won't succeed unless
-	# any/all attached programs are removed.
-	bpf_clear_cgroups "$CGRP" "$WHERE" "$NAME"
-
-	if bpftool cgroup attach "$CGRP" "$WHERE" pinned "$TMP_FILE"; then
-		rm -f "$TMP_FILE"
-		return 0
-	fi
-
-	rm -f "$TMP_FILE"
-	cilium bpf migrate-maps -e "$OUT" -r 1
-	return 1
-}
-
-function bpf_clear_cgroups()
-{
-	CGRP=$1
-	HOOK=$2
-	NAME=$3
-
-	# Since Linux commit 1ba5ad36e00f ("bpftool: Use libbpf_bpf_attach_type_str"),
-	# bpftool uses the libbpf_bpf_attach_type_str() format in 'bpftool cgroup
-	# show' output. Perform a naive translation to ensure compatibility with prior
-	# bpftool versions and to avoid updating the hook name at all call sites. The
-	# transformed string can be used in a suffix match against the new format.
-
-	# Examples: (old -> transformed, new)
-	# connect4 -> 4_connect, cgroup_inet4_connect
-	# post_bind6 -> 6_post_bind, cgroup_inet6_post_bind
-	# sendmsg4 -> 4_sendmsg, cgroup_udp4_sendmsg
-
-	# There is no inet4/6 variant of e.g. sendmsg, so it's safe to assume the
-	# intended udp4/6 hook is selected.
-	newhook=$(echo "$HOOK" | sed -E 's/([a-z_]+)([0-9])/\2_\1/')
-
-	set +e
-	bpftool link detach pinned "$BPFFS_ROOT/cilium/socketlb/links/cgroup/$NAME" || true
-	rm -f "$BPFFS_ROOT/cilium/socketlb/links/cgroup/$NAME"
-	set -e
-
-	# Get all programs attached to the given cgroup and store their ids in a
-	# newline-separated string. Perform a full match on the 'legacy' hook name
-	# appearing in older versions of bpftool, but perform a suffix match using the
-	# 'new' hook name.
-	ids=$(bpftool cgroup show "$CGRP" -j |
-		jq --arg legacy "$HOOK" --arg new "$newhook" '.[] |
-			select(
-				.attach_type == $legacy or
-				(.attach_type | endswith($new))
-			) | .id')
-
-	# Cilium versions 1.14 and later use ebpf-go to attach cgroup programs, which
-	# potentially attaches programs using the 'multi' flag if the kernel is recent
-	# enough to support the flag, but too old to support bpf_link. Detach all
-	# programs at the given hook since we can't reliably determine which ones
-	# Cilium owns.
-	for id in $ids; do
-		bpftool cgroup detach "$CGRP" "$HOOK" id "$id"
-	done
 }
 
 function create_encap_dev()
@@ -549,67 +449,6 @@ for iface in $(ip -o -a l | awk '{print $2}' | cut -d: -f1 | cut -d@ -f1 | grep 
 		fi
 	done
 done
-
-if [ "$SOCKETLB" = "true" ]; then
-	if [ "$IP6_HOST" != "<nil>" ]; then
-		echo 1 > "${PROCSYSNETDIR}/ipv6/conf/all/forwarding"
-	fi
-
-	CALLS_MAP="cilium_calls_lb"
-	COPTS=""
-	if [ "$IP6_HOST" != "<nil>" ] || [ "$IP4_HOST" != "<nil>" ] && [ -f "${PROCSYSNETDIR}/ipv6/conf/all/forwarding" ]; then
-		bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr connect6 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock6_connect
-		if [ "$SOCKETLB_PEER" = "true" ]; then
-			bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr getpeername6 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock6_getpeername
-		fi
-		if [ "$NODE_PORT" = "true" ] && [ "$NODE_PORT_BIND" = "true" ]; then
-			bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sock post_bind6 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock6_post_bind
-		else
-			bpf_clear_cgroups "$CGROUP_ROOT" post_bind6 cil_sock6_post_bind
-		fi
-		if [ "$MODE" = "ipip" ]; then
-			bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr bind6 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock6_pre_bind
-		else
-			bpf_clear_cgroups "$CGROUP_ROOT" bind6 cil_sock6_pre_bind
-		fi
-		bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr sendmsg6 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock6_sendmsg
-		bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr recvmsg6 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock6_recvmsg
-	fi
-	if [ "$IP4_HOST" != "<nil>" ]; then
-		bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr connect4 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock4_connect
-		if [ "$SOCKETLB_PEER" = "true" ]; then
-			bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr getpeername4 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock4_getpeername
-		fi
-		if [ "$NODE_PORT" = "true" ] && [ "$NODE_PORT_BIND" = "true" ]; then
-			bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sock post_bind4 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock4_post_bind
-		else
-			bpf_clear_cgroups "$CGROUP_ROOT" post_bind4 cil_sock4_post_bind
-		fi
-		if [ "$MODE" = "ipip" ]; then
-			bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr bind4 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock4_pre_bind
-		else
-			bpf_clear_cgroups "$CGROUP_ROOT" bind4 cil_sock4_pre_bind
-		fi
-		bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr sendmsg4 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock4_sendmsg
-		bpf_load_cgroups "$COPTS" bpf_sock.c bpf_sock.o sockaddr recvmsg4 "$CALLS_MAP" "$CGROUP_ROOT" "$BPFFS_ROOT" cil_sock4_recvmsg
-	fi
-
-	cilium bpf migrate-maps -e bpf_sock.o -r 0
-
-else
-	bpf_clear_cgroups "$CGROUP_ROOT" bind4 cil_sock4_pre_bind
-	bpf_clear_cgroups "$CGROUP_ROOT" bind6 cil_sock6_pre_bind
-	bpf_clear_cgroups "$CGROUP_ROOT" post_bind4 cil_sock4_post_bind
-	bpf_clear_cgroups "$CGROUP_ROOT" post_bind6 cil_sock6_post_bind
-	bpf_clear_cgroups "$CGROUP_ROOT" connect4 cil_sock4_connect
-	bpf_clear_cgroups "$CGROUP_ROOT" connect6 cil_sock6_connect
-	bpf_clear_cgroups "$CGROUP_ROOT" sendmsg4 cil_sock4_sendmsg
-	bpf_clear_cgroups "$CGROUP_ROOT" sendmsg6 cil_sock6_sendmsg
-	bpf_clear_cgroups "$CGROUP_ROOT" recvmsg4 cil_sock4_recvmsg
-	bpf_clear_cgroups "$CGROUP_ROOT" recvmsg6 cil_sock6_recvmsg
-	bpf_clear_cgroups "$CGROUP_ROOT" getpeername4 cil_sock4_getpeername
-	bpf_clear_cgroups "$CGROUP_ROOT" getpeername6 cil_sock6_getpeername
-fi
 
 if [ "$HOST_DEV1" != "$HOST_DEV2" ]; then
 	bpf_unload $HOST_DEV2 "egress"

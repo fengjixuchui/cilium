@@ -198,6 +198,10 @@ const (
 	// should watch for.
 	K8sWatcherEndpointSelector = "k8s-watcher-endpoint-selector"
 
+	// EnableK8s operation of Kubernetes-related services/controllers.
+	// Intended for operating cilium with CNI-compatible orchestrators other than Kubernetes. (default is true)
+	EnableK8s = "enable-k8s"
+
 	// K8sAPIServer is the kubernetes api address server (for https use --k8s-kubeconfig-path instead)
 	K8sAPIServer = "k8s-api-server"
 
@@ -364,9 +368,6 @@ const (
 
 	// EnableIPv4EgressGateway enables the IPv4 egress gateway
 	EnableIPv4EgressGateway = "enable-ipv4-egress-gateway"
-
-	// InstallEgressGatewayRoutes installs IP rules and routes required to steer traffic to the correct network interface
-	InstallEgressGatewayRoutes = "install-egress-gateway-routes"
 
 	// EnableIngressController enables Ingress Controller
 	EnableIngressController = "enable-ingress-controller"
@@ -655,9 +656,6 @@ const (
 	// of MaxControllerInterval.
 	MaxCtrlIntervalName = "max-controller-interval"
 
-	// SockopsEnableName is the name of the option to enable sockops
-	SockopsEnableName = "sockops-enable"
-
 	// K8sNamespaceName is the name of the K8sNamespace option
 	K8sNamespaceName = "k8s-namespace"
 
@@ -698,7 +696,7 @@ const (
 	// MonitorQueueSizeName is the name of the option MonitorQueueSize
 	MonitorQueueSizeName = "monitor-queue-size"
 
-	//FQDNRejectResponseCode is the name for the option for dns-proxy reject response code
+	// FQDNRejectResponseCode is the name for the option for dns-proxy reject response code
 	FQDNRejectResponseCode = "tofqdns-dns-reject-response-code"
 
 	// FQDNProxyDenyWithNameError is useful when stub resolvers, like the one
@@ -805,14 +803,6 @@ const (
 
 	// LocalRouterIPv6 is the link-local IPv6 address to use for Cilium router device
 	LocalRouterIPv6 = "local-router-ipv6"
-
-	// ForceLocalPolicyEvalAtSource forces a policy decision at the source
-	// endpoint for all local communication
-	ForceLocalPolicyEvalAtSource = "force-local-policy-eval-at-source"
-
-	// SkipCRDCreation specifies whether the CustomResourceDefinition will be
-	// created by the daemon
-	SkipCRDCreation = "skip-crd-creation"
 
 	// EnableEndpointRoutes enables use of per endpoint routes
 	EnableEndpointRoutes = "enable-endpoint-routes"
@@ -1246,6 +1236,9 @@ const (
 	// DSR dispatch mode to encapsulate to IPIP
 	DSRDispatchIPIP = "ipip"
 
+	// DSR dispatch mode to encapsulate to Geneve
+	DSRDispatchGeneve = "geneve"
+
 	// DSR L4 translation to frontend port
 	DSRL4XlateFrontend = "frontend"
 
@@ -1561,9 +1554,6 @@ type DaemonConfig struct {
 	// runs in the same container as Cilium.
 	EnvoyLogPath string
 
-	// EnableSockOps specifies whether to enable sockops (socket lookup).
-	SockopsEnable bool
-
 	ProcFs string
 
 	// PrependIptablesChains is the name of the option to enable prepending
@@ -1693,7 +1683,6 @@ type DaemonConfig struct {
 	EnableBPFClockProbe        bool
 	EnableIPMasqAgent          bool
 	EnableIPv4EgressGateway    bool
-	InstallEgressGatewayRoutes bool
 	EnableEnvoyConfig          bool
 	EnableIngressController    bool
 	EnableGatewayAPI           bool
@@ -1870,10 +1859,6 @@ type DaemonConfig struct {
 	// LocalRouterIPv6 is the link-local IPv6 address used for Cilium's router device
 	LocalRouterIPv6 string
 
-	// ForceLocalPolicyEvalAtSource forces a policy decision at the source
-	// endpoint for all local communication
-	ForceLocalPolicyEvalAtSource bool
-
 	// EnableEndpointRoutes enables use of per endpoint routes
 	EnableEndpointRoutes bool
 
@@ -1882,24 +1867,6 @@ type DaemonConfig struct {
 
 	// RunMonitorAgent indicates whether to run the monitor agent
 	RunMonitorAgent bool
-
-	// ReadCNIConfiguration reads the CNI configuration file and extracts
-	// Cilium relevant information. This can be used to pass per node
-	// configuration to Cilium.
-	ReadCNIConfiguration string
-
-	// WriteCNIConfigurationWhenReady writes the CNI configuration to the
-	// specified location once the agent is ready to serve requests. This
-	// allows to keep a Kubernetes node NotReady until Cilium is up and
-	// running and able to schedule endpoints.
-	WriteCNIConfigurationWhenReady string
-
-	// CNIExclusive, if true, directs the agent to remove all other CNI configuration files
-	CNIExclusive bool
-
-	// CNILogFile is a path on disk (on the host) for the CNI plugin binary to use
-	// for logging.
-	CNILogFile string
 
 	// EnableNodePort enables k8s NodePort service implementation in BPF
 	EnableNodePort bool
@@ -2042,9 +2009,6 @@ type DaemonConfig struct {
 
 	// IPAM is the IPAM method to use
 	IPAM string
-
-	// Enable chaining with another CNI plugin.
-	CNIChainingMode string
 
 	// AutoCreateCiliumNodeResource enables automatic creation of a
 	// CiliumNode resource for the local node
@@ -2363,7 +2327,6 @@ var (
 		KVStoreOpt:                   make(map[string]string),
 		LogOpt:                       make(map[string]string),
 		LoopbackIPv4:                 defaults.LoopbackIPv4,
-		ForceLocalPolicyEvalAtSource: defaults.ForceLocalPolicyEvalAtSource,
 		EnableEndpointRoutes:         defaults.EnableEndpointRoutes,
 		AnnotateK8sNode:              defaults.AnnotateK8sNode,
 		K8sServiceCacheSize:          defaults.K8sServiceCacheSize,
@@ -2494,6 +2457,10 @@ func (c *DaemonConfig) TunnelDevice() string {
 // TunnelExists returns true if some traffic may go through a tunnel, including
 // if the primary mode is native routing. For example, in the egress gateway,
 // we may send such traffic to a gateway node via a tunnel.
+// In conjunction with the DSR Geneve and the direct routing, traffic from
+// intermediate nodes to backend pods go through a tunnel, but the datapath logic
+// takes care of the MTU overhead. So no need to take it into account here.
+// See encap_geneve_dsr_opt[4,6] in nodeport.h
 func (c *DaemonConfig) TunnelExists() bool {
 	return c.TunnelingEnabled() || c.EnableIPv4EgressGateway
 }
@@ -2885,7 +2852,6 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.ClusterID = vp.GetUint32(ClusterIDName)
 	c.ClusterName = vp.GetString(ClusterName)
 	c.ClusterMeshConfig = vp.GetString(ClusterMeshConfigName)
-	c.CNIChainingMode = vp.GetString(CNIChainingMode)
 	c.DatapathMode = vp.GetString(DatapathMode)
 	c.Debug = vp.GetBool(DebugArg)
 	c.DebugVerbose = vp.GetStringSlice(DebugVerbose)
@@ -2944,7 +2910,6 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.EncryptInterface = vp.GetStringSlice(EncryptInterface)
 	c.EncryptNode = vp.GetBool(EncryptNode)
 	c.EnvoyLogPath = vp.GetString(EnvoyLog)
-	c.ForceLocalPolicyEvalAtSource = vp.GetBool(ForceLocalPolicyEvalAtSource)
 	c.HTTPNormalizePath = vp.GetBool(HTTPNormalizePath)
 	c.HTTPIdleTimeout = vp.GetInt(HTTPIdleTimeout)
 	c.HTTPMaxGRPCTimeout = vp.GetInt(HTTPMaxGRPCTimeout)
@@ -2990,7 +2955,6 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.EnableBPFClockProbe = vp.GetBool(EnableBPFClockProbe)
 	c.EnableIPMasqAgent = vp.GetBool(EnableIPMasqAgent)
 	c.EnableIPv4EgressGateway = vp.GetBool(EnableIPv4EgressGateway)
-	c.InstallEgressGatewayRoutes = vp.GetBool(InstallEgressGatewayRoutes)
 	c.EgressGatewayPolicyMapEntries = vp.GetInt(EgressGatewayPolicyMapEntriesName)
 	c.EnableEnvoyConfig = vp.GetBool(EnableEnvoyConfig)
 	c.EnableIngressController = vp.GetBool(EnableIngressController)
@@ -3015,19 +2979,14 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	c.ProxyPrometheusPort = vp.GetInt(ProxyPrometheusPort)
 	c.ProxyMaxRequestsPerConnection = vp.GetInt(ProxyMaxRequestsPerConnection)
 	c.ProxyMaxConnectionDuration = time.Duration(vp.GetInt64(ProxyMaxConnectionDuration))
-	c.ReadCNIConfiguration = vp.GetString(ReadCNIConfiguration)
 	c.RestoreState = vp.GetBool(Restore)
 	c.RouteMetric = vp.GetInt(RouteMetric)
 	c.RunDir = vp.GetString(StateDir)
 	c.SidecarIstioProxyImage = vp.GetString(SidecarIstioProxyImage)
 	c.UseSingleClusterRoute = vp.GetBool(SingleClusterRouteName)
 	c.SocketPath = vp.GetString(SocketPath)
-	c.SockopsEnable = vp.GetBool(SockopsEnableName)
 	c.TracePayloadlen = vp.GetInt(TracePayloadlen)
 	c.Version = vp.GetString(Version)
-	c.WriteCNIConfigurationWhenReady = vp.GetString(WriteCNIConfigurationWhenReady)
-	c.CNIExclusive = vp.GetBool(CNIExclusive)
-	c.CNILogFile = vp.GetString(CNILogFile)
 	c.PolicyTriggerInterval = vp.GetDuration(PolicyTriggerInterval)
 	c.CTMapEntriesTimeoutTCP = vp.GetDuration(CTMapEntriesTimeoutTCPName)
 	c.CTMapEntriesTimeoutAny = vp.GetDuration(CTMapEntriesTimeoutAnyName)
@@ -3087,8 +3046,14 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	if c.TunnelPort == 0 {
 		switch c.Tunnel {
 		case TunnelDisabled:
-			// tunnel might still be used by eg. EgressGW
-			c.TunnelPort = defaults.TunnelPortVXLAN
+			// tunnel might still be used by eg. DSR with Geneve dispatch or EgressGW
+			if (c.EnableNodePort || c.KubeProxyReplacement == KubeProxyReplacementStrict) &&
+				c.NodePortMode == NodePortModeDSR &&
+				c.LoadBalancerDSRDispatch == DSRDispatchGeneve {
+				c.TunnelPort = defaults.TunnelPortGeneve
+			} else {
+				c.TunnelPort = defaults.TunnelPortVXLAN
+			}
 		case TunnelVXLAN:
 			c.TunnelPort = defaults.TunnelPortVXLAN
 		case TunnelGeneve:

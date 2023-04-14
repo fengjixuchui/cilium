@@ -53,10 +53,6 @@ const (
 	// compatible with MetalLB's configuration.
 	BGPConfigPath = "bgp-config-path"
 
-	// SkipCRDCreation specifies whether the CustomResourceDefinition will be
-	// disabled for the operator
-	SkipCRDCreation = "skip-crd-creation"
-
 	// CNPNodeStatusGCInterval is the GC interval for nodes which have been
 	// removed from the cluster in CiliumNetworkPolicy and
 	// CiliumClusterwideNetworkPolicy Status.
@@ -90,10 +86,6 @@ const (
 
 	// NodesGCInterval is the duration for which the cilium nodes are GC.
 	NodesGCInterval = "nodes-gc-interval"
-
-	// OperatorAPIServeAddr IP:Port on which to serve api requests in
-	// operator (pass ":Port" to bind on all interfaces, "" is off)
-	OperatorAPIServeAddr = "operator-api-serve-addr"
 
 	// OperatorPrometheusServeAddr IP:Port on which to serve prometheus
 	// metrics (pass ":Port" to bind on all interfaces, "" is off).
@@ -301,11 +293,6 @@ const (
 	// Applicable values: dedicated, shared
 	IngressDefaultLoadbalancerMode = "ingress-default-lb-mode"
 
-	// EnableK8s operation of Kubernet-related services/controllers.
-	// Intended for operating cilium with CNI-compatible orchestrators
-	// other than Kubernetes. (default is true)
-	EnableK8s = "enable-k8s"
-
 	// PodRestartSelector specify the labels contained in the pod that needs to be restarted before the node can be de-stained
 	// default values: k8s-app=kube-dns
 	PodRestartSelector = "pod-restart-selector"
@@ -347,7 +334,6 @@ type OperatorConfig struct {
 	// will simply return.
 	EndpointGCInterval time.Duration
 
-	OperatorAPIServeAddr        string
 	OperatorPrometheusServeAddr string
 
 	// SyncK8sServices synchronizes k8s services into the kvstore
@@ -377,10 +363,6 @@ type OperatorConfig struct {
 	// BGPConfigPath is the file path to the BGP configuration. It is
 	// compatible with MetalLB's configuration.
 	BGPConfigPath string
-
-	// SkipCRDCreation disables creation of the CustomResourceDefinition
-	// for the operator
-	SkipCRDCreation bool
 
 	// IPAM options
 
@@ -560,11 +542,6 @@ type OperatorConfig struct {
 	// Applicable values: dedicated, shared
 	IngressDefaultLoadbalancerMode string
 
-	// Enables/Disables operation of kubernet-related services/controllers.
-	// Intended for operating cilium with CNI-compatible orquestrators
-	// othern than Kubernetes. (default is true)
-	EnableK8s bool
-
 	// PodRestartSelector specify the labels contained in the pod that needs to be restarted before the node can be de-stained
 	PodRestartSelector string
 }
@@ -579,7 +556,6 @@ func (c *OperatorConfig) Populate(vp *viper.Viper) {
 	c.CNPStatusCleanupBurst = vp.GetInt(CNPStatusCleanupBurst)
 	c.EnableMetrics = vp.GetBool(EnableMetrics)
 	c.EndpointGCInterval = vp.GetDuration(EndpointGCInterval)
-	c.OperatorAPIServeAddr = vp.GetString(OperatorAPIServeAddr)
 	c.OperatorPrometheusServeAddr = vp.GetString(OperatorPrometheusServeAddr)
 	c.SyncK8sServices = vp.GetBool(SyncK8sServices)
 	c.SyncK8sNodes = vp.GetBool(SyncK8sNodes)
@@ -593,7 +569,6 @@ func (c *OperatorConfig) Populate(vp *viper.Viper) {
 	c.LeaderElectionRetryPeriod = vp.GetDuration(LeaderElectionRetryPeriod)
 	c.BGPAnnounceLBIP = vp.GetBool(BGPAnnounceLBIP)
 	c.BGPConfigPath = vp.GetString(BGPConfigPath)
-	c.SkipCRDCreation = vp.GetBool(SkipCRDCreation)
 	c.LoadBalancerL7 = vp.GetString(LoadBalancerL7)
 	c.LoadBalancerL7Ports = vp.GetStringSlice(LoadBalancerL7Ports)
 	c.LoadBalancerL7Algorithm = vp.GetString(LoadBalancerL7Algorithm)
@@ -611,7 +586,6 @@ func (c *OperatorConfig) Populate(vp *viper.Viper) {
 	c.IngressLBAnnotationPrefixes = vp.GetStringSlice(IngressLBAnnotationPrefixes)
 	c.IngressSharedLBServiceName = vp.GetString(IngressSharedLBServiceName)
 	c.IngressDefaultLoadbalancerMode = vp.GetString(IngressDefaultLoadbalancerMode)
-	c.EnableK8s = vp.GetBool(EnableK8s)
 	c.PodRestartSelector = vp.GetString(PodRestartSelector)
 
 	c.CiliumK8sNamespace = vp.GetString(CiliumK8sNamespace)
