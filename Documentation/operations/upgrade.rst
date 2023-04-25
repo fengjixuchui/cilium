@@ -324,12 +324,32 @@ Annotations:
   ``--update-ec2-adapter-limit-via-api`` to ``false`` if you want to avoid this
   additional IAM permission. Beware that if your EC2 instance type that Cilium
   is running on is not known to Cilium, it may cause a crash.
+* Egress Gateway policies now drop matching traffic when no
+  gateway nodes can be found. Previously, traffic would be allowed without
+  being rerouted towards an Egress Gateway.
+
 
 Removed Options
 ~~~~~~~~~~~~~~~
 
 * The ``sockops-enable`` and ``force-local-policy-eval-at-source`` options deprecated in version
   1.13 are removed.
+
+New Options
+~~~~~~~~~~~
+
+* ``routing-mode=native``: This option enables native-routing mode, in place of
+  ``tunnel=disabled``, now deprecated.
+* ``tunnel-protocol``: This option allows setting the tunneling protocol, in place
+  of e.g., ``tunnel=vxlan``.
+
+Deprecated Options
+~~~~~~~~~~~~~~~~~~
+
+* The ``tunnel`` option is deprecated and will be removed in v1.15. To enable
+  native-routing mode, set ``routing-mode=native`` (previously
+  ``tunnel=disabled``). To configure the tunneling protocol, set
+  ``tunnel-protocol=geneve`` (previously ``tunnel=geneve``).
 
 Added Metrics
 ~~~~~~~~~~~~~
@@ -360,6 +380,29 @@ Helm Options
 * The ``securityContext`` for Hubble Relay now defaults to drop all
   capabilities and run as non-root user.
 * The ``containerRuntime.integration`` value is being deprecated in favor of ``bpf.autoMount.enabled``.
+* Following the deprecation of the ``tunnel`` agent flag, ``tunnel`` is being
+  deprecated in favor of ``routingMode`` and ``tunnelProtocol`` and will be
+  removed in v1.15.
+* Values ``encryption.keyFile``, ``encryption.mountPath``,
+  ``encryption.secretName`` and ``encryption.interface`` are deprecated in
+  favor of their ``encryption.ipsec.*`` counterparts and will be removed in
+  Cilium 1.15.
+* Value ``hubble.peerService.enabled`` was deprecated in Cilium 1.13 and has
+  been removed. The peer service is no longer optional.
+* Values ``hubble.tls.ca``, ``hubble.tls.ca.cert`` and ``hubble.tls.ca.key``
+  were deprecated in Cilium 1.12 in favor of ``tls.ca``, ``tls.ca.cert`` and
+  ``tls.ca.key`` respectively, and have been removed.
+* Value ``hubble.ui.securityContext.enabled`` was deprecated in Cilium 1.12 in
+  favor of ``hubble.ui.securityContext``, and has been removed.
+* Values ``ipam.operator.clusterPoolIPv4PodCIDR`` and
+  ``ipam.operator.clusterPoolIPv6PodCIDR`` were deprecated in Cilium 1.11 in
+  favor of ``ipam.operator.clusterPoolIPv4PodCIDRList`` and
+  ``ipam.operator.clusterPoolIPv6PodCIDRList``, respectively, and have been
+  removed.
+  In order to preserve the default behavior for selecting CIDRs when default
+  values are kept, ``ipam.operator.clusterPoolIPv4PodCIDRList`` now defaults to
+  a singleton containing the default CIDR value for the removed value
+  ``ipam.operator.clusterPoolIPv4PodCIDR`` (and similarly for IPv6).
 
 .. _earlier_upgrade_notes:
 

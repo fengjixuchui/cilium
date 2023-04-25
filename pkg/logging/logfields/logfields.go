@@ -232,6 +232,9 @@ const (
 	// Hash is a hash of something
 	Hash = "hash"
 
+	// ServerNames is the list of TLS SNIs
+	ServerNames = "serverNames"
+
 	// ServiceName is the orchestration framework name for a service
 	ServiceName = "serviceName"
 
@@ -681,4 +684,7 @@ const (
 
 	// User identifies a given user
 	User = "user"
+
+	// CIDRGroupRef is a references to a CiliumCIDRGroup object.
+	CIDRGroupRef = "cidrGroupRef"
 )

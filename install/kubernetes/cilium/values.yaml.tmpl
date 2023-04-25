@@ -37,7 +37,7 @@ k8sServiceHost: ""
 k8sServicePort: ""
 
 cluster:
-  # -- Name of the cluster. Only required for Cluster Mesh.
+  # -- Name of the cluster. Only required for Cluster Mesh and mTLS auth with SPIRE.
   name: default
   # -- (int) Unique ID of the cluster. Must be unique across all connected
   # clusters and in the range of 1 to 255. Only required for Cluster Mesh,
@@ -714,22 +714,22 @@ encryption:
     # -- Enables the fallback to the user-space implementation.
     userspaceFallback: false
 
-  # -- Deprecated in favor of encryption.ipsec.keyFile.
+  # -- Deprecated in favor of encryption.ipsec.keyFile. To be removed in 1.15.
   # Name of the key file inside the Kubernetes secret configured via secretName.
   # This option is only effective when encryption.type is set to ipsec.
   keyFile: keys
 
-  # -- Deprecated in favor of encryption.ipsec.mountPath.
+  # -- Deprecated in favor of encryption.ipsec.mountPath. To be removed in 1.15.
   # Path to mount the secret inside the Cilium pod.
   # This option is only effective when encryption.type is set to ipsec.
   mountPath: /etc/ipsec
 
-  # -- Deprecated in favor of encryption.ipsec.secretName.
+  # -- Deprecated in favor of encryption.ipsec.secretName. To be removed in 1.15.
   # Name of the Kubernetes secret containing the encryption keys.
   # This option is only effective when encryption.type is set to ipsec.
   secretName: cilium-ipsec-keys
 
-  # -- Deprecated in favor of encryption.ipsec.interface.
+  # -- Deprecated in favor of encryption.ipsec.interface. To be removed in 1.15.
   # The interface to use for encrypted traffic.
   # This option is only effective when encryption.type is set to ipsec.
   interface: ""
@@ -940,10 +940,6 @@ hubble:
   skipUnknownCGroupIDs: ~
 
   peerService:
-    # -- Enable a K8s Service for the Peer service, so that it can be accessed
-    # by a non-local client. This configuration option is deprecated, the peer
-    # service will be non-optional starting Cilium v1.14.
-    enabled: true
     # -- Service Port for the Peer service.
     # If not set, it is dynamically assigned to port 443 if TLS is enabled and to
     # port 80 if not.
@@ -994,16 +990,6 @@ hubble:
       # -- certmanager issuer used when hubble.tls.auto.method=certmanager.
       certManagerIssuerRef: {}
 
-    # -- Deprecated in favor of tls.ca. To be removed in 1.13.
-    # base64 encoded PEM values for the Hubble CA certificate and private key.
-    ca:
-      # -- Deprecated in favor of tls.ca.cert. To be removed in 1.13.
-      cert: ""
-      # -- Deprecated in favor of tls.ca.key. To be removed in 1.13.
-      # The CA private key (optional). If it is provided, then it will be
-      # used by hubble.tls.auto.method=cronJob to generate all other certificates.
-      # Otherwise, a ephemeral CA is generated if hubble.tls.auto.enabled=true.
-      key: ""
     # -- base64 encoded PEM values for the Hubble server certificate and private key
     server:
       cert: ""
@@ -1352,9 +1338,6 @@ hubble:
 
     # -- Security context to be added to Hubble UI pods
     securityContext:
-      # -- Deprecated in favor of hubble.ui.securityContext.
-      # Whether to set the security context on the Hubble UI pods.
-      enabled: true
       runAsUser: 1001
       runAsGroup: 1001
       fsGroup: 1001
@@ -1409,18 +1392,12 @@ ipam:
   # -- Maximum rate at which the CiliumNode custom resource is updated.
   ciliumNodeUpdateRate: "15s"
   operator:
-    # -- Deprecated in favor of ipam.operator.clusterPoolIPv4PodCIDRList.
-    # IPv4 CIDR range to delegate to individual nodes for IPAM.
-    clusterPoolIPv4PodCIDR: "10.0.0.0/8"
     # -- IPv4 CIDR list range to delegate to individual nodes for IPAM.
-    clusterPoolIPv4PodCIDRList: []
+    clusterPoolIPv4PodCIDRList: ["10.0.0.0/8"]
     # -- IPv4 CIDR mask size to delegate to individual nodes for IPAM.
     clusterPoolIPv4MaskSize: 24
-    # -- Deprecated in favor of ipam.operator.clusterPoolIPv6PodCIDRList.
-    # IPv6 CIDR range to delegate to individual nodes for IPAM.
-    clusterPoolIPv6PodCIDR: "fd00::/104"
-     # -- IPv6 CIDR list range to delegate to individual nodes for IPAM.
-    clusterPoolIPv6PodCIDRList: []
+    # -- IPv6 CIDR list range to delegate to individual nodes for IPAM.
+    clusterPoolIPv6PodCIDRList: ["fd00::/104"]
     # -- IPv6 CIDR mask size to delegate to individual nodes for IPAM.
     clusterPoolIPv6MaskSize: 120
     # -- The maximum burst size when rate limiting access to external APIs.
@@ -1779,7 +1756,15 @@ tls:
 #   - disabled
 #   - vxlan (default)
 #   - geneve
-tunnel: "vxlan"
+tunnel: ""
+
+# -- Tunneling protocol to use in tunneling mode and for ad-hoc tunnels.
+# @default -- `"vxlan"`
+tunnelProtocol: ""
+
+# -- Enable native-routing mode or tunneling mode.
+# @default -- `"tunnel"`
+routingMode: ""
 
 # -- Configure VXLAN and Geneve tunnel port.
 # @default -- Port 8472 for VXLAN, Port 6081 for Geneve
@@ -2638,18 +2623,80 @@ sctp:
 
 auth:
   mTLS:
-    # -- Enable mtls-spiffe authentication method in CiliumNetworkPolicy
-    enabled: false
-    # -- SPIRE server endpoint
-    # This endpoint will be automatically injected later once embedded SPIRE installation is done.
-    spireServerAddress: spire-server.spire.svc.cluster.local:8081
-    # -- SPIRE server connection timeout
-    spireServerConnectionTimeout: 10s
-    # -- SPIRE agent socket path where the SPIRE agent is listening
-    spireAgentSocketPath: /run/spire/sockets/agent/agent.sock
-    # -- SPIRE socket path where the SPIRE delegated api agent is listening
-    spireAdminSocketPath: /run/spire/sockets/admin.sock
-    # -- SPIFFE trust domain to use for fetching certificates
-    spiffeTrustDomain: spiffe.cilium.io
-    # -- port on the agent which is used to mTLS handshakes on
+    # -- Port on the agent where mTLS handshakes between agents will be performed
     port: 4250
+    # Settings for SPIRE
+    spire:
+      # -- Enable SPIRE integration
+      enabled: false
+      # -- Settings to control the SPIRE installation and configuration
+      install:
+        # -- Enable SPIRE installation.
+        # This will only take effect only if auth.mTLS.spire.enabled is true
+        enabled: false
+        # -- SPIRE namespace to install into
+        namespace: cilium-spire
+        # -- SPIRE agent configuration
+        agent:
+          # -- SPIRE agent image
+          image: ghcr.io/spiffe/spire-agent:1.5.1@sha256:40228af4d9a094f0fef2d7a303a3b6a689c4b4eba2fa9f7da5125b81d2d68ec8
+          # -- SPIRE agent service account
+          serviceAccount:
+            create: true
+            name: spire-agent
+          # -- SPIRE agent init containers
+          initContainers:
+          - name: init
+            image: cgr.dev/chainguard/wait-for-it@sha256:ecb58e3a2ffbdb732bb9049987e06eaf826d945410e167f31d6ffe28fab259f4
+            args: [ "-t", "30", "spire-server:8081" ]
+          # -- SPIRE agent annotations
+          annotations: { }
+          # -- SPIRE agent labels
+          labels: { }
+          # -- SPIRE Workload Attestor kubelet verification.
+          skipKubeletVerification: false
+        server:
+          # -- SPIRE server image
+          image: ghcr.io/spiffe/spire-server:1.5.1@sha256:4851ec8c71a8fbe230d87be78dfed0e908800c2342cf192289c7885bb2f7a870
+          # -- SPIRE server service account
+          serviceAccount:
+            create: true
+            name: spire-server
+          # -- SPIRE server init containers
+          initContainers: []
+          # -- SPIRE server annotations
+          annotations: {}
+          # -- SPIRE server labels
+          labels: {}
+          # -- SPIRE server service configuration
+          service:
+            type: ClusterIP
+            annotations: {}
+            labels: {}
+          # -- SPIRE server datastorage configuration
+          dataStorage:
+            enabled: true
+            size: 1Gi
+            accessMode: ReadWriteOnce
+            storageClass: null
+          # -- SPIRE CA configuration
+          ca:
+            # -- SPIRE CA key type
+            # AWS requires the use of RSA. EC cryptography is not supported
+            keyType: "rsa-4096"
+            # -- SPIRE CA Subject
+            subject:
+              country: "US"
+              organization: "SPIRE"
+              commonName: ""
+      # -- SPIRE server address
+      serverAddress: spire-server.cilium-spire.svc.cluster.local:8081
+      # -- SPIFFE trust domain to use for fetching certificates
+      trustDomain: spiffe.cilium
+      # -- SPIRE socket path where the SPIRE delegated api agent is listening
+      adminSocketPath: /run/spire/sockets/admin.sock
+      # -- SPIRE socket path where the SPIRE workload agent is listening.
+      # Applies to both the Cilium Agent and Operator
+      agentSocketPath: /run/spire/sockets/agent/agent.sock
+      # -- SPIRE connection timeout
+      connectionTimeout: 30s

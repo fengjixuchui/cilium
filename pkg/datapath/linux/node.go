@@ -1104,9 +1104,9 @@ func (n *linuxNodeHandler) nodeUpdate(oldNode, newNode *nodeTypes.Node, firstAdd
 	}
 
 	if option.Config.EnableWireguard && newNode.WireguardPubKey != "" {
-		if err := n.wgAgent.UpdatePeer(newNode.Name, newNode.WireguardPubKey, newIP4, newIP6); err != nil {
+		if err := n.wgAgent.UpdatePeer(newNode.Fullname(), newNode.WireguardPubKey, newIP4, newIP6); err != nil {
 			log.WithError(err).
-				WithField(logfields.NodeName, newNode.Name).
+				WithField(logfields.NodeName, newNode.Fullname()).
 				Warning("Failed to update wireguard configuration for peer")
 		}
 	}
@@ -1222,7 +1222,7 @@ func (n *linuxNodeHandler) nodeDelete(oldNode *nodeTypes.Node) error {
 	}
 
 	if option.Config.EnableWireguard {
-		if err := n.wgAgent.DeletePeer(oldNode.Name); err != nil {
+		if err := n.wgAgent.DeletePeer(oldNode.Fullname()); err != nil {
 			return err
 		}
 	}
@@ -1323,7 +1323,7 @@ func (n *linuxNodeHandler) removeEncryptRules() error {
 func (n *linuxNodeHandler) createNodeIPSecInRoute(ip *net.IPNet) route.Route {
 	var device string
 
-	if option.Config.Tunnel == option.TunnelDisabled {
+	if !option.Config.TunnelingEnabled() {
 		device = option.Config.EncryptInterface[0]
 	} else {
 		device = option.Config.TunnelDevice()
@@ -1525,8 +1525,7 @@ func (n *linuxNodeHandler) NodeConfigurationChanged(newConfig datapath.LocalNode
 				return err
 			}
 			n.enableNeighDiscovery = len(ifaceNames) != 0 // No need to arping for L2-less devices
-		case n.nodeConfig.EnableIPSec &&
-			option.Config.Tunnel == option.TunnelDisabled &&
+		case n.nodeConfig.EnableIPSec && !option.Config.TunnelingEnabled() &&
 			len(option.Config.EncryptInterface) != 0:
 			// When FIB lookup is not supported we need to pick an
 			// interface so pick first interface in the list. On

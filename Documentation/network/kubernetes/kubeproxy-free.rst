@@ -501,7 +501,7 @@ enabled would look as follows:
 
     helm install cilium |CHART_RELEASE| \\
         --namespace kube-system \\
-        --set tunnel=disabled \\
+        --set routingMode=native \\
         --set kubeProxyReplacement=strict \\
         --set loadBalancer.mode=dsr \\
         --set k8sServiceHost=${API_SERVER_IP} \\
@@ -579,7 +579,7 @@ mode would look as follows:
 
     helm install cilium |CHART_RELEASE| \\
         --namespace kube-system \\
-        --set tunnel=disabled \\
+        --set routingMode=native \\
         --set kubeProxyReplacement=strict \\
         --set loadBalancer.mode=hybrid \\
         --set k8sServiceHost=${API_SERVER_IP} \\
@@ -614,7 +614,7 @@ looks as follows:
 
     helm install cilium |CHART_RELEASE| \\
         --namespace kube-system \\
-        --set tunnel=disabled \\
+        --set routingMode=native \\
         --set kubeProxyReplacement=strict \\
         --set socketLB.hostNamespaceOnly=true
 
@@ -650,7 +650,7 @@ modes and can be enabled as follows for ``loadBalancer.mode=hybrid`` in this exa
 
     helm install cilium |CHART_RELEASE| \\
         --namespace kube-system \\
-        --set tunnel=disabled \\
+        --set routingMode=native \\
         --set kubeProxyReplacement=strict \\
         --set loadBalancer.acceleration=native \\
         --set loadBalancer.mode=hybrid \\
@@ -665,7 +665,7 @@ each underlying device's driver must have native XDP support on all Cilium manag
 nodes. In addition, for performance reasons we recommend kernel >= 5.5 for
 the multi-device XDP acceleration.
 
-NodePort acceleration can be used with either direct routing (``tunnel=disabled``)
+NodePort acceleration can be used with either direct routing (``routingMode=native``)
 or tunnel mode. Direct routing is recommended to achieve optimal performance.
 
 A list of drivers supporting XDP can be found in :ref:`the documentation for XDP<xdp_drivers>`.
@@ -850,7 +850,7 @@ will automatically configure your virtual network to route pod traffic correctly
      --set azure.tenantID=$AZURE_TENANT_ID \\
      --set azure.clientID=$AZURE_CLIENT_ID \\
      --set azure.clientSecret=$AZURE_CLIENT_SECRET \\
-     --set tunnel=disabled \\
+     --set routingMode=native \\
      --set enableIPv4Masquerade=false \\
      --set devices=eth0 \\
      --set kubeProxyReplacement=strict \\
@@ -1124,6 +1124,13 @@ This section elaborates on the various ``kubeProxyReplacement`` options:
   this server, and there would otherwise be a clash when cilium attempts to bind its server to the
   same port). A few example configurations
   for the ``partial`` option are provided below.
+
+.. note::
+
+    Switching from the ``strict`` to ``disabled`` mode, or vice versa can break
+    existing connections to services in a cluster. The same goes for enabling, or
+    disabling ``socketLB``. It is recommended to drain all the workloads before
+    performing such configuration changes.
 
   The following Helm setup below would be equivalent to ``kubeProxyReplacement=strict``
   in a kube-proxy-free environment:
